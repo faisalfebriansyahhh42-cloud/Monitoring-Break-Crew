@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pantau Istirahat Karyawan + Barcode</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      padding: 30px;
+    }
+    h1, h2 {
+      text-align: center;
+      color: #333;
+    }
+    .input-section, .section {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    input[type="text"], input[type="date"] {
+      padding: 10px;
+      width: 250px;
+      font-size: 16px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 5px;
+      cursor: pointer;
+      background: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    .reset-btn {
+      background: #dc3545;
+    }
+    .reset-btn:hover {
+      background: #a71d2a;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background: #fff;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 12px;
+      text-align: center;
+      font-size: 16px;
+    }
+    th {
+      background: #007bff;
+      color: #fff;
+    }
+    .timer {
+      font-weight: bold;
+      color: #d9534f;
+    }
+    .valid { background: #e7f9ef; }
+    .invalid { background: #fdeaea; }
+  </style>
+</head>
+<body>
+
+  <h1>📊 Dashboard Istirahat Karyawan</h1>
+
+  <!-- INPUT MANUAL -->
+  <div class="input-section">
+    <input type="text" id="nama" placeholder="Masukkan nama karyawan..." />
+    <button onclick="mulaiIstirahat()">Mulai Istirahat</button>
+  </div>
+  <div class="input-section">
+    <input type="text" id="namaSelesai" placeholder="Masukkan nama untuk selesai..." />
+    <button onclick="selesaiIstirahat()">Selesai Istirahat</button>
+  </div>
+
+  <!-- TABEL AKTIF -->
+  <h2>🔁 Karyawan Sedang Istirahat</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Nama</th>
+        <th>Waktu Mulai</th>
+        <th>Sisa / Lebih Waktu</th>
+      </tr>
+    </thead>
+    <tbody id="tabel"></tbody>
+  </table>
+
+  <!-- HISTORY -->
+  <div class="section">
+    <h2>🟢 History - Istirahat Sesuai (≤ 1 Jam)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Nama</th>
+          <th>Tanggal</th>
+          <th>Waktu Mulai</th>
+          <th>Waktu Selesai</th>
+          <th>Total Durasi</th>
+        </tr>
+      </thead>
+      <tbody id="history-sesuai"></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>🔴 History - Tidak Sesuai (> 1 Jam)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Nama</th>
+          <th>Tanggal</th>
+          <th>Waktu Mulai</th>
+          <th>Waktu Selesai</th>
+          <th>Total Durasi</th>
+        </tr>
+      </thead>
+      <tbody id="history-tidak"></tbody>
+    </table>
+  </div>
+
+  <!-- KONTROL HAPUS -->
+  <div class="section">
+    <h2>🧹 Kelola Data</h2>
+    <input type="date" id="tanggalHapus" />
+    <button onclick="hapusHistoryTanggal()">🗑 Hapus Berdasarkan Tanggal</button><br><br>
+    <button class="reset-btn" onclick="resetData()">🗑 Hapus Semua Data</button>
+  </div>
+
+  <script>
+    let daftar = JSON.parse(localStorage.getItem("daftar")) || [];
+    let history = JSON.parse(localStorage.getItem("history")) || [];
+
+    // Konversi ulang ke Date
+    daftar = daftar.map(d => ({ ...d, mulai: new Date(d.mulai), selesai: new Date(d.selesai) }));
+
+    function simpanData() {
+      localStorage.setItem("daftar", JSON.stringify(daftar));
+      localStorage.setItem("history", JSON.stringify(history));
+    }
+
+    function mulaiIstirahat() {
+      const nama = document.getElementById("nama").value.trim();
+      if (!nama) return alert("Nama tidak boleh kosong!");
+      if (daftar.find(d => d.nama.toLowerCase() === nama.toLowerCase())) {
+        return alert("❌ Karyawan ini sudah sedang istirahat!");
+      }
+
+      const mulai = new Date();
+      const selesai = new Date(mulai.getTime() + 60 * 60 * 1000);
+      daftar.push({ nama, mulai, selesai });
+
+      document.getElementById("nama").value = "";
+      simpanData();
+      updateTabel();
+    }
+
+    function selesaiIstirahat() {
+      const namaInput = document.getElementById("namaSelesai").value.trim();
+      if (!namaInput) return alert("Nama tidak boleh kosong!");
+
+      const index = daftar.findIndex(d => d.nama.toLowerCase() === namaInput.toLowerCase());
+      if (index === -1) return alert("❌ Nama tidak ditemukan di daftar istirahat!");
+
+      const data = daftar[index];
+      data.selesaiNyata = new Date();
+      simpanHistory(data);
+      daftar.splice(index, 1);
+      simpanData();
+
+      document.getElementById("namaSelesai").value = "";
+      updateTabel();
+    }
+
+    function updateTabel() {
+      const sekarang = new Date();
+      const tabel = document.getElementById("tabel");
+      tabel.innerHTML = "";
+
+      daftar.forEach(data => {
+        let sisaMs = data.selesai - sekarang;
+        let status = "Sisa";
+        if (sisaMs < 0) {
+          status = "Lebih";
+          sisaMs = Math.abs(sisaMs);
+        }
+        const menit = Math.floor((sisaMs / 1000 / 60) % 60);
+        const detik = Math.floor((sisaMs / 1000) % 60);
+        const row = `
+          <tr>
+            <td>${data.nama}</td>
+            <td>${data.mulai.toLocaleTimeString()}</td>
+            <td class="timer">${status}: ${menit}m ${detik}s</td>
+          </tr>
+        `;
+        tabel.innerHTML += row;
+      });
+    }
+
+    function simpanHistory(data) {
+      const selesaiNyata = data.selesaiNyata;
+      const totalMs = selesaiNyata - data.mulai;
+      const totalMenit = Math.floor(totalMs / 60000);
+      const kategori = totalMenit <= 60 ? "sesuai" : "tidak";
+
+      history.push({
+        nama: data.nama,
+        tanggal: data.mulai.toLocaleDateString(),
+        mulai: data.mulai.toLocaleTimeString(),
+        selesai: selesaiNyata.toLocaleTimeString(),
+        durasi: totalMenit + " menit",
+        kategori
+      });
+
+      simpanData();
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const sesuai = document.getElementById("history-sesuai");
+      const tidak = document.getElementById("history-tidak");
+
+      sesuai.innerHTML = "";
+      tidak.innerHTML = "";
+
+      history.forEach(item => {
+        const row = `
+          <tr class="${item.kategori === 'sesuai' ? 'valid' : 'invalid'}">
+            <td>${item.nama}</td>
+            <td>${item.tanggal}</td>
+            <td>${item.mulai}</td>
+            <td>${item.selesai}</td>
+            <td>${item.durasi}</td>
+          </tr>
+        `;
+        if (item.kategori === "sesuai") {
+          sesuai.innerHTML += row;
+        } else {
+          tidak.innerHTML += row;
+        }
+      });
+    }
+
+    function hapusHistoryTanggal() {
+      const tanggal = document.getElementById("tanggalHapus").value;
+      if (!tanggal) return alert("⚠ Silakan pilih tanggal!");
+
+      const target = new Date(tanggal).toLocaleDateString();
+      const sebelum = history.length;
+      history = history.filter(item => item.tanggal !== target);
+      const setelah = history.length;
+
+      if (sebelum === setelah) {
+        alert("📅 Tidak ada data pada tanggal tersebut.");
+      } else {
+        simpanData();
+        renderHistory();
+        alert(`✅ Data pada tanggal ${target} berhasil dihapus.`);
+      }
+    }
+
+    function resetData() {
+      if (confirm("⚠ Apakah Anda yakin ingin menghapus SEMUA data?")) {
+        localStorage.removeItem("daftar");
+        localStorage.removeItem("history");
+        daftar = [];
+        history = [];
+        document.getElementById("tabel").innerHTML = "";
+        document.getElementById("history-sesuai").innerHTML = "";
+        document.getElementById("history-tidak").innerHTML = "";
+        alert("✅ Semua data berhasil dihapus.");
+      }
+    }
+
+    // Inisialisasi saat halaman dibuka
+    renderHistory();
+    updateTabel();
+    setInterval(updateTabel, 1000);
+  </script>
+</body>
+</html>
